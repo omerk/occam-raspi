@@ -1,0 +1,231 @@
+#IF NOT (DEFINED (DIGITAL.MODULE))
+#DEFINE DIGITAL.MODULE
+
+#INCLUDE "file.module"
+#INCLUDE "course.module"
+#INCLUDE "raspi.inc"
+
+--* Symbolic constant for setting the level of a digital pin.
+--
+-- Can be
+-- [@item] [@code VAL LEVEL HIGH] or
+-- [@item] [@code VAL LEVEL LOW]
+DATA TYPE LEVEL IS INT:
+VAL LEVEL LOW IS #0:
+VAL LEVEL HIGH IS #1:
+
+--{{{ FUNCTION NOT (user defined operator: LEVEL->LEVEL)
+--* Unary (logical) negation operator for the LEVEL type
+-- Enables the use of [@code level := NOT level], where [@code level] 
+-- is of type [@code LEVEL].
+--
+-- @private
+-- @param l Input value
+-- @returns HIGH if l is LOW, LOW otherwise
+LEVEL INLINE FUNCTION "NOT" (VAL LEVEL level)
+  LEVEL result:
+
+  VALOF
+    IF
+      level = LOW
+        result := HIGH
+      TRUE
+        result := LOW
+
+    RESULT result
+:
+--}}}
+
+
+INT FUNCTION get.pin.index(VAL INT pin)
+  INT result:
+
+  VALOF
+    IF 
+      (pin < 2)
+        result := pin
+      (pin = 4)
+        result := 2
+      (pin >= 7) AND (pin <= 11)
+        result := pin - 4
+      (pin = 14) OR (pin = 15)
+        result := pin - 6
+      (pin = 17) OR (pin = 18)
+        result := pin - 7
+      (pin >= 21) AND (pin <= 25)
+        result := pin - 9
+      TRUE
+        STOP
+
+    RESULT result       
+:
+
+
+PROC digital.write(VAL INT pin, VAL LEVEL state)
+  INT fd.val, fd.result, pin.index:
+  [1]BYTE state.byte:
+
+  SEQ
+    pin.index := get.pin.index(pin)
+
+    IF
+      state = LOW
+        state.byte := "0"
+      TRUE
+        state.byte := "1"
+
+    file.open(pins.value[pin.index], O.WRONLY, fd.val)
+    file.write(fd.val, state.byte, fd.result)
+    file.close(fd.val, fd.result)
+:
+
+
+PROC digital.read(VAL INT pin, RESULT LEVEL state)
+  INT fd.val, fd.result, pin.index:
+  LEVEL pin.result:
+  [2]BYTE pin.val:
+
+  SEQ  
+    pin.index := get.pin.index(pin)
+
+    file.open(pins.value[pin.index], O.RDONLY, fd.val)
+    file.read(fd.val, pin.val, fd.result)
+    file.close(fd.val, fd.result)
+
+    IF
+      pin.val[0] = '0'
+        pin.result := LOW
+      pin.val[1] = '1'
+        pin.result := HIGH
+      TRUE
+        STOP
+
+    state := pin.result
+:
+
+
+PROC digital.mode(VAL INT pin, VAL []BYTE mode)
+  INT fd.export, fd.dir, fd.result, pin.index, buf.size: 
+
+  SEQ
+    pin.index := get.pin.index(pin)
+
+    file.open("/sys/class/gpio/export", O.WRONLY, fd.export)
+
+    IF
+      pin < 10
+        [1]BYTE pin.str:
+        SEQ
+          buffer.set.int(pin.str, buf.size, pin)
+          file.write(fd.export, pin.str, fd.result)
+      TRUE
+        [2]BYTE pin.str:
+        SEQ
+          buffer.set.int(pin.str, buf.size, pin)
+          file.write(fd.export, pin.str, fd.result)
+ 
+    file.open(pins.direction[pin.index], O.WRONLY, fd.dir)
+    file.write(fd.dir, mode, fd.result)
+
+    file.close(fd.export, fd.result)
+    file.close(fd.dir, fd.result)
+:
+
+
+PROC digital.release(VAL INT pin)
+  INT fd.unexport, fd.result, buf.size:
+
+  SEQ 
+    file.open("/sys/class/gpio/unexport", O.WRONLY, fd.unexport)
+
+    IF
+      pin < 10
+        [1]BYTE pin.str:
+        SEQ
+          buffer.set.int(pin.str, buf.size, pin)
+          file.write(fd.unexport, pin.str, fd.result)
+      TRUE
+        [2]BYTE pin.str:
+        SEQ
+          buffer.set.int(pin.str, buf.size, pin)
+          file.write(fd.unexport, pin.str, fd.result)
+
+    file.close(fd.unexport, fd.result)  
+:
+
+
+--{{{ PROC digital.output
+--* Set digital levels on a pin.
+-- Reads LEVEL values (LOW or HIGH) on the input channel, and sets the
+-- value of the specified pin accordingly.
+--
+-- @param board.pin The Arduino pin number
+-- @param in Pin levels (LOW or HIGH)
+PROC digital.output(VAL INT board.pin, CHAN LEVEL in?)
+  LEVEL v:
+  SEQ
+    in ? v
+    digital.mode(board.pin, PIN.OUTPUT)
+    WHILE TRUE
+      SEQ
+        digital.write(board.pin, v)
+        in ? v
+:
+--}}}
+
+
+----{{{ PROC digital.input
+----* Read digital levels on external level interrupt pins.
+---- This procedure will output a LEVEL (either LOW or HIGH) whenever the
+---- pin changes value.
+----
+---- @param board.pin The pin number (pins 2 and 3 are safe choices).
+---- @param out The LEVEL, output when the pin changes level.
+--PROC digital.input (VAL INT board.pin, CHAN LEVEL out!)
+--  --INITIAL INT avr.pin IS board.to.chip(board.pin):
+--  --INITIAL INT vintr IS (- 1):
+--  LEVEL wl:
+--  LEVEL level, last.level:
+--
+--  PROC read ()
+--    SEQ
+--      digital.read (board.pin, wl)
+--      level := LEVEL wl
+--  :
+--
+--  SEQ
+--    --#PRAGMA DEFINED vintr
+--    --set.interrups (avr.pin, vintr)
+--    --read () --FIXME:Why is this its own process?
+--    last.level := level
+--    WHILE TRUE
+--      SEQ
+--        IF
+--          level <> last.level
+--            out ! level
+--          TRUE
+--            SKIP
+--        INT any:
+--        --wait.for.interrupt (vintr, any)
+--        read ()
+--:
+----}}}
+
+
+PROC test()
+  TIMER tim:
+  INT t:
+
+  SEQ
+    digital.mode(4, PIN.OUTPUT)
+    WHILE TRUE
+      SEQ
+        digital.write(4, HIGH)
+        tim ? t
+        tim ? AFTER t PLUS ((1 * 1000) * 1000)
+        digital.write(4, LOW)
+        tim ? t
+        tim ? AFTER t PLUS ((1 * 1000) * 1000)
+:
+
+#ENDIF

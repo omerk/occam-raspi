@@ -1,0 +1,7 @@
+#INCLUDE "pwm.module"
+
+PROC main()
+  SEQ
+    pwm.init()
+    pwm.value(500)
+:

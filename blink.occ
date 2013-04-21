@@ -1,0 +1,10 @@
+#INCLUDE "plumbing.module"
+
+PROC main()
+  PAR
+    blink(4, 300)
+    blink(17, 1500)
+    blink(18, 700)
+    blink(21, 100)
+:
+

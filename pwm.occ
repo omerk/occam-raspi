@@ -1,0 +1,12 @@
+
+#PRAGMA EXTERNAL "PROC C.pwm.init () = 0"
+#PRAGMA EXTERNAL "PROC C.pwm.value (VAL INT value) = 0 "
+
+PROC pwm.init ()
+  C.pwm.init()
+:
+
+PROC pwm.value (VAL INT value)
+  C.pwm.value(value)
+:
+

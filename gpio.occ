@@ -1,0 +1,130 @@
+#IF NOT (DEFINED (GPIO.MODULE))
+#DEFINE GPIO.MODULE
+
+#INCLUDE "file.module"
+#INCLUDE "course.module"
+#INCLUDE "raspi.inc"
+
+INT FUNCTION get.pin.index(VAL INT pin)
+  INT result:
+
+  VALOF
+    IF 
+      (pin < 2)
+        result := pin
+      (pin = 4)
+        result := 2
+      (pin >= 7) AND (pin <= 11)
+        result := pin - 4
+      (pin = 14) OR (pin = 15)
+        result := pin - 6
+      (pin = 17) OR (pin = 18)
+        result := pin - 7
+      (pin >= 21) AND (pin <= 25)
+        result := pin - 9
+      TRUE
+        STOP
+
+    RESULT result       
+:
+
+PROC pin.init(VAL INT pin, VAL []BYTE dir)
+  INT fd.export, fd.dir, fd.result, pin.index, buf.size: 
+
+  SEQ
+    pin.index := get.pin.index(pin)
+
+    file.open("/sys/class/gpio/export", O.WRONLY, fd.export)
+
+    IF
+      pin < 10
+        [1]BYTE pin.str:
+        SEQ
+          buffer.set.int(pin.str, buf.size, pin)
+          file.write(fd.export, pin.str, fd.result)
+      TRUE
+        [2]BYTE pin.str:
+        SEQ
+          buffer.set.int(pin.str, buf.size, pin)
+          file.write(fd.export, pin.str, fd.result)
+ 
+    file.open(pins.direction[pin.index], O.WRONLY, fd.dir)
+    file.write(fd.dir, dir, fd.result)
+
+    file.close(fd.export, fd.result)
+    file.close(fd.dir, fd.result)
+:
+
+PROC pin.read(VAL INT pin, RESULT INT val)
+  INT fd.val, fd.result, pin.index, pin.result:
+  [2]BYTE pin.val:
+
+  SEQ  
+    pin.index := get.pin.index(pin)
+
+    file.open(pins.value[pin.index], O.RDONLY, fd.val)
+    file.read(fd.val, pin.val, fd.result)
+    file.close(fd.val, fd.result)
+
+    IF
+      pin.val[0] = PIN.LOW
+        pin.result := 0
+      pin.val[1] = PIN.HIGH
+        pin.result := 1
+      TRUE
+        STOP
+
+    val := pin.result
+:
+
+PROC pin.write(VAL INT pin, VAL BYTE val)
+  INT fd.val, fd.result, pin.index:
+  VAL []BYTE val.array IS [val]:
+
+  SEQ
+    pin.index := get.pin.index(pin)
+
+    file.open(pins.value[pin.index], O.WRONLY, fd.val)
+    file.write(fd.val, val.array, fd.result)
+    file.close(fd.val, fd.result)
+:
+
+PROC pin.release(VAL INT pin)
+  INT fd.unexport, fd.result, buf.size:
+
+  SEQ 
+    file.open("/sys/class/gpio/unexport", O.WRONLY, fd.unexport)
+
+    IF
+      pin < 10
+        [1]BYTE pin.str:
+        SEQ
+          buffer.set.int(pin.str, buf.size, pin)
+          file.write(fd.unexport, pin.str, fd.result)
+      TRUE
+        [2]BYTE pin.str:
+        SEQ
+          buffer.set.int(pin.str, buf.size, pin)
+          file.write(fd.unexport, pin.str, fd.result)
+
+    file.close(fd.unexport, fd.result)  
+:
+
+PROC test()
+  TIMER tim:
+  INT t:
+
+  SEQ
+    pin.init(18, PIN.OUT)
+    WHILE TRUE
+      SEQ
+        pin.write(18, PIN.HIGH)
+        tim ? t
+        tim ? AFTER t PLUS ((1 * 1000) * 1000)
+        pin.write(18, PIN.LOW)
+        tim ? t
+        tim ? AFTER t PLUS ((1 * 1000) * 1000)
+:
+
+#ENDIF
+
